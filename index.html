@@ -9,7 +9,6 @@
     body { background: #f8f9fa; }
     .container { max-width: 800px; }
     .hidden { display: none !important; }
-    .clickable { cursor: pointer; }
     .tab-content { margin-top: 1rem; }
   </style>
 </head>
@@ -22,24 +21,23 @@
       <h3>Zaloguj się lub zarejestruj</h3>
       <input type="email" id="email" class="form-control mb-2" placeholder="E-mail">
       <input type="password" id="password" class="form-control mb-2" placeholder="Hasło">
-      <!-- Pole na nazwę gracza – tylko przy rejestracji -->
       <input type="text" id="username" class="form-control mb-2 hidden" placeholder="Nazwa gracza">
-      <div class="d-flex gap-2">
+      <div class="d-flex flex-wrap gap-2">
         <button id="loginBtn" class="btn btn-primary">Zaloguj</button>
         <button id="registerBtn" class="btn btn-outline-primary">Zarejestruj</button>
         <button id="createAccountBtn" class="btn btn-success hidden">Utwórz konto</button>
+        <button id="resetPasswordBtn" class="btn btn-link btn-sm ms-auto">Zapomniałem hasła</button>
       </div>
       <p id="authError" class="text-danger mt-2"></p>
     </div>
 
-    <!-- Panel użytkownika (po zalogowaniu) -->
+    <!-- Panel użytkownika -->
     <div id="userSection" class="hidden">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <span id="userInfo"></span>
         <button id="logoutBtn" class="btn btn-outline-secondary">Wyloguj</button>
       </div>
 
-      <!-- Zakładki -->
       <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-tab="typing">Typuj mecze</button></li>
         <li class="nav-item"><button class="nav-link" data-tab="ranking">Ranking</button></li>
@@ -47,38 +45,21 @@
         <li class="nav-item" id="adminTabNav"><button class="nav-link" data-tab="admin">Admin</button></li>
       </ul>
 
-      <!-- Zakładka: typowanie -->
-      <div id="typingTab" class="tab-content hidden">
-        <h4>Dostępne mecze</h4>
-        <div id="matchesContainer"></div>
-      </div>
-
-      <!-- Zakładka: ranking -->
-      <div id="rankingTab" class="tab-content hidden">
-        <h4>Tabela punktów</h4>
-        <table class="table table-striped">
-          <thead><tr><th>#</th><th>Gracz</th><th>Punkty</th></tr></thead>
-          <tbody id="rankingBody"></tbody>
-        </table>
-      </div>
-
-      <!-- Zakładka: zasady -->
+      <div id="typingTab" class="tab-content hidden"><h4>Dostępne mecze</h4><div id="matchesContainer"></div></div>
+      <div id="rankingTab" class="tab-content hidden"><h4>Tabela punktów</h4><table class="table table-striped"><thead><tr><th>#</th><th>Gracz</th><th>Punkty</th></tr></thead><tbody id="rankingBody"></tbody></table></div>
       <div id="rulesTab" class="tab-content hidden">
         <h4>Zasady gry</h4>
         <ul>
-          <li>Za <strong>dokładne trafienie wyniku</strong> meczu (np. typ 2:1 i faktycznie 2:1) otrzymujesz <strong>5 punktów</strong>.</li>
-          <li>Za <strong>poprawne wytypowanie zwycięzcy lub remisu</strong> (ale nie dokładnego wyniku) – <strong>3 punkty</strong>.</li>
-          <li>Typy można zmieniać <strong>do 30 minut przed rozpoczęciem meczu</strong> – potem obstawianie jest blokowane.</li>
-          <li>Po zakończeniu meczu administrator wpisuje prawdziwy wynik, a system automatycznie przyznaje punkty.</li>
-          <li>Nowe konta muszą zostać zatwierdzone przez administratora.</li>
-          <li>Ranking pokazuje sumę punktów wszystkich graczy.</li>
+          <li>Za <strong>dokładne trafienie wyniku</strong> (np. typ 2:1 i wynik 2:1) – <strong>5 punktów</strong>.</li>
+          <li>Za <strong>poprawnego zwycięzcę lub remis</strong> (nie dokładny wynik) – <strong>3 punkty</strong>.</li>
+          <li>Typy można zmieniać <strong>do 30 minut przed meczem</strong>.</li>
+          <li>Po meczu administrator wpisuje wynik, a system przyznaje punkty automatycznie.</li>
+          <li>Nowe konta wymagają akceptacji administratora.</li>
+          <li>Ranking sumuje punkty wszystkich graczy.</li>
         </ul>
       </div>
-
-      <!-- Zakładka: admin -->
       <div id="adminTab" class="tab-content hidden">
-        <h4>Nowi użytkownicy do zatwierdzenia</h4>
-        <div id="pendingUsers"></div>
+        <h4>Nowi użytkownicy do zatwierdzenia</h4><div id="pendingUsers"></div>
         <hr>
         <h4>Dodaj mecz</h4>
         <form id="addMatchForm" class="row g-2 mb-4">
@@ -87,37 +68,32 @@
           <div class="col-md-3"><input type="datetime-local" id="matchDate" class="form-control" required></div>
           <div class="col-md-1"><button type="submit" class="btn btn-success">+</button></div>
         </form>
-        <h4>Wprowadź wyniki meczów</h4>
-        <div id="adminResultsContainer"></div>
+        <h4>Wprowadź wyniki meczów</h4><div id="adminResultsContainer"></div>
       </div>
     </div>
   </div>
 
-  <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
     import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, updateDoc, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
-    // 🔧 TUTAJ WKLEJ SWÓJ config z Firebase
     const firebaseConfig = {
-  apiKey: "AIzaSyBM7MdbHtZDwqQVxFrsz1trXYlZ_Bd9wWk",
-  authDomain: "typowanko---mundial-26.firebaseapp.com",
-  projectId: "typowanko---mundial-26",
-  storageBucket: "typowanko---mundial-26.firebasestorage.app",
-  messagingSenderId: "192915610551",
-  appId: "1:192915610551:web:90b84383ad4552897a2632"
-};
+      apiKey: "AIzaSyBM7MdbHtZDwqQVxFrsz1trXYlZ_Bd9wWk",
+      authDomain: "typowanko---mundial-26.firebaseapp.com",
+      projectId: "typowanko---mundial-26",
+      storageBucket: "typowanko---mundial-26.firebasestorage.app",
+      messagingSenderId: "192915610551",
+      appId: "1:192915610551:web:90b84383ad4552897a2632"
+    };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
 
-    // Stan aplikacji
     let currentUser = null;
     let userData = null;
 
-    // Elementy UI
     const authSection = document.getElementById('authSection');
     const userSection = document.getElementById('userSection');
     const emailInput = document.getElementById('email');
@@ -126,6 +102,7 @@
     const loginBtn = document.getElementById('loginBtn');
     const registerBtn = document.getElementById('registerBtn');
     const createAccountBtn = document.getElementById('createAccountBtn');
+    const resetPasswordBtn = document.getElementById('resetPasswordBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const authError = document.getElementById('authError');
     const userInfo = document.getElementById('userInfo');
@@ -139,7 +116,6 @@
       admin: document.getElementById('adminTab')
     };
 
-    // Przełączanie zakładek
     mainTabs.addEventListener('click', (e) => {
       const tab = e.target.dataset.tab;
       if (!tab) return;
@@ -151,8 +127,7 @@
       if (tab === 'admin') loadAdminPanel();
     });
 
-    // Logowanie
-    loginBtn.addEventListener('click', () => loginUser());
+    loginBtn.addEventListener('click', loginUser);
 
     async function loginUser() {
       const email = emailInput.value.trim();
@@ -168,7 +143,6 @@
       }
     }
 
-    // Rejestracja – dwuetapowa
     registerBtn.addEventListener('click', () => {
       usernameInput.classList.remove('hidden');
       createAccountBtn.classList.remove('hidden');
@@ -191,22 +165,18 @@
       }
 
       try {
-        // Tworzymy konto w Auth
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCred.user;
 
-        // Sprawdzamy unikalność nazwy w Firestore
         const q = query(collection(db, 'users'), where('displayName', '==', username));
         const snap = await getDocs(q);
         if (!snap.empty) {
-          // Nazwa zajęta – usuwamy konto i informujemy
           await deleteUser(user);
           authError.textContent = 'Nazwa gracza jest już zajęta. Wybierz inną.';
           resetRegistrationForm();
           return;
         }
 
-        // Zapisujemy dokument użytkownika
         await setDoc(doc(db, 'users', user.uid), {
           email: user.email,
           displayName: username,
@@ -215,11 +185,8 @@
           totalPoints: 0
         });
 
-        // Wylogowujemy i informujemy
         await signOut(auth);
         alert('Konto utworzone! Poczekaj na akceptację administratora.');
-
-        // Reset formularza
         emailInput.value = '';
         passwordInput.value = '';
         resetRegistrationForm();
@@ -237,12 +204,26 @@
       usernameInput.value = '';
     }
 
-    logoutBtn.addEventListener('click', () => {
-      signOut(auth);
-      resetRegistrationForm(); // gdyby był rozwinięty formularz
+    resetPasswordBtn.addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      authError.textContent = '';
+      if (!email) {
+        authError.textContent = 'Wpisz swój adres e-mail powyżej, a potem kliknij "Zapomniałem hasła".';
+        return;
+      }
+      try {
+        await sendPasswordResetEmail(auth, email);
+        alert('E-mail z linkiem do resetu hasła został wysłany. Sprawdź skrzynkę (także spam).');
+      } catch (err) {
+        authError.textContent = 'Błąd: ' + (err.code === 'auth/user-not-found' ? 'Nie ma konta z takim adresem' : err.message);
+      }
     });
 
-    // Obsługa stanu logowania
+    logoutBtn.addEventListener('click', () => {
+      signOut(auth);
+      resetRegistrationForm();
+    });
+
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
       if (!user) {
@@ -273,7 +254,6 @@
       document.querySelector('[data-tab="typing"]').click();
     });
 
-    // --- Mecze i typowanie ---
     async function loadMatches() {
       const container = document.getElementById('matchesContainer');
       container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
@@ -336,7 +316,6 @@
       loadMatches();
     };
 
-    // --- Ranking ---
     async function loadRanking() {
       const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true), orderBy('totalPoints', 'desc')));
       const tbody = document.getElementById('rankingBody');
@@ -348,7 +327,6 @@
       });
     }
 
-    // --- Admin ---
     async function loadAdminPanel() {
       if (!userData || userData.role !== 'admin') return;
       const pendingDiv = document.getElementById('pendingUsers');
