@@ -10,6 +10,7 @@
     .container { max-width: 800px; }
     .hidden { display: none !important; }
     .clickable { cursor: pointer; }
+    .tab-content { margin-top: 1rem; }
   </style>
 </head>
 <body class="py-4">
@@ -21,8 +22,13 @@
       <h3>Zaloguj się lub zarejestruj</h3>
       <input type="email" id="email" class="form-control mb-2" placeholder="E-mail">
       <input type="password" id="password" class="form-control mb-2" placeholder="Hasło">
-      <button id="loginBtn" class="btn btn-primary me-2">Zaloguj</button>
-      <button id="registerBtn" class="btn btn-outline-primary">Zarejestruj</button>
+      <!-- Pole na nazwę gracza – tylko przy rejestracji -->
+      <input type="text" id="username" class="form-control mb-2 hidden" placeholder="Nazwa gracza">
+      <div class="d-flex gap-2">
+        <button id="loginBtn" class="btn btn-primary">Zaloguj</button>
+        <button id="registerBtn" class="btn btn-outline-primary">Zarejestruj</button>
+        <button id="createAccountBtn" class="btn btn-success hidden">Utwórz konto</button>
+      </div>
       <p id="authError" class="text-danger mt-2"></p>
     </div>
 
@@ -37,11 +43,12 @@
       <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-tab="typing">Typuj mecze</button></li>
         <li class="nav-item"><button class="nav-link" data-tab="ranking">Ranking</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="rules">Zasady</button></li>
         <li class="nav-item" id="adminTabNav"><button class="nav-link" data-tab="admin">Admin</button></li>
       </ul>
 
       <!-- Zakładka: typowanie -->
-      <div id="typingTab" class="tab-content">
+      <div id="typingTab" class="tab-content hidden">
         <h4>Dostępne mecze</h4>
         <div id="matchesContainer"></div>
       </div>
@@ -53,6 +60,19 @@
           <thead><tr><th>#</th><th>Gracz</th><th>Punkty</th></tr></thead>
           <tbody id="rankingBody"></tbody>
         </table>
+      </div>
+
+      <!-- Zakładka: zasady -->
+      <div id="rulesTab" class="tab-content hidden">
+        <h4>Zasady gry</h4>
+        <ul>
+          <li>Za <strong>dokładne trafienie wyniku</strong> meczu (np. typ 2:1 i faktycznie 2:1) otrzymujesz <strong>5 punktów</strong>.</li>
+          <li>Za <strong>poprawne wytypowanie zwycięzcy lub remisu</strong> (ale nie dokładnego wyniku) – <strong>3 punkty</strong>.</li>
+          <li>Typy można zmieniać <strong>do 30 minut przed rozpoczęciem meczu</strong> – potem obstawianie jest blokowane.</li>
+          <li>Po zakończeniu meczu administrator wpisuje prawdziwy wynik, a system automatycznie przyznaje punkty.</li>
+          <li>Nowe konta muszą zostać zatwierdzone przez administratora.</li>
+          <li>Ranking pokazuje sumę punktów wszystkich graczy.</li>
+        </ul>
       </div>
 
       <!-- Zakładka: admin -->
@@ -77,17 +97,17 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
     import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, updateDoc, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
     // 🔧 TUTAJ WKLEJ SWÓJ config z Firebase
     const firebaseConfig = {
-  apiKey: "AIzaSyBM7MdbHtZDwqQVxFrsz1trXYlZ_Bd9wWk",
-  authDomain: "typowanko---mundial-26.firebaseapp.com",
-  projectId: "typowanko---mundial-26",
-  storageBucket: "typowanko---mundial-26.firebasestorage.app",
-  messagingSenderId: "192915610551",
-  appId: "1:192915610551:web:90b84383ad4552897a2632"
-};
+      apiKey: "AIza...",
+      authDomain: "...",
+      projectId: "...",
+      storageBucket: "...",
+      messagingSenderId: "...",
+      appId: "..."
+    };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -95,23 +115,27 @@
 
     // Stan aplikacji
     let currentUser = null;
-    let userData = null; // dane z Firestore (users/{uid})
+    let userData = null;
 
-    // -------------------- UI --------------------
+    // Elementy UI
     const authSection = document.getElementById('authSection');
     const userSection = document.getElementById('userSection');
     const emailInput = document.getElementById('email');
     const passwordInput = document.getElementById('password');
+    const usernameInput = document.getElementById('username');
     const loginBtn = document.getElementById('loginBtn');
     const registerBtn = document.getElementById('registerBtn');
+    const createAccountBtn = document.getElementById('createAccountBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const authError = document.getElementById('authError');
     const userInfo = document.getElementById('userInfo');
     const adminTabNav = document.getElementById('adminTabNav');
     const mainTabs = document.getElementById('mainTabs');
+
     const tabs = {
       typing: document.getElementById('typingTab'),
       ranking: document.getElementById('rankingTab'),
+      rules: document.getElementById('rulesTab'),
       admin: document.getElementById('adminTab')
     };
 
@@ -127,38 +151,96 @@
       if (tab === 'admin') loadAdminPanel();
     });
 
-    // Logowanie/rejestracja
-    loginBtn.addEventListener('click', () => loginOrRegister('login'));
-    registerBtn.addEventListener('click', () => loginOrRegister('register'));
+    // Logowanie
+    loginBtn.addEventListener('click', () => loginUser());
 
-    async function loginOrRegister(mode) {
+    async function loginUser() {
       const email = emailInput.value.trim();
       const password = passwordInput.value;
       authError.textContent = '';
       if (!email || !password) return authError.textContent = 'Podaj e-mail i hasło';
       try {
-        if (mode === 'register') {
-          await createUserWithEmailAndPassword(auth, email, password);
-          // Po rejestracji utwórz dokument użytkownika
-          const user = auth.currentUser;
-          await setDoc(doc(db, 'users', user.uid), {
-            email: user.email,
-            displayName: user.email.split('@')[0],
-            approved: false,
-            role: 'player',
-            totalPoints: 0
-          });
-          auth.signOut(); // Wyloguj – musi czekać na akceptację
-          alert('Konto utworzone! Poczekaj na akceptację administratora.');
-        } else {
-          await signInWithEmailAndPassword(auth, email, password);
-        }
+        await signInWithEmailAndPassword(auth, email, password);
+        emailInput.value = '';
+        passwordInput.value = '';
       } catch (err) {
-        authError.textContent = 'Błąd: ' + (err.code === 'auth/user-not-found' ? 'Nie ma takiego konta' : err.message);
+        authError.textContent = 'Błąd logowania: ' + (err.code === 'auth/user-not-found' ? 'Nie ma takiego konta' : err.message);
       }
     }
 
-    logoutBtn.addEventListener('click', () => auth.signOut());
+    // Rejestracja – dwuetapowa
+    registerBtn.addEventListener('click', () => {
+      usernameInput.classList.remove('hidden');
+      createAccountBtn.classList.remove('hidden');
+      registerBtn.classList.add('hidden');
+      loginBtn.classList.add('hidden');
+      authError.textContent = '';
+    });
+
+    createAccountBtn.addEventListener('click', registerUser);
+
+    async function registerUser() {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      const username = usernameInput.value.trim();
+      authError.textContent = '';
+
+      if (!email || !password || !username) {
+        authError.textContent = 'Podaj e-mail, hasło i nazwę gracza';
+        return;
+      }
+
+      try {
+        // Tworzymy konto w Auth
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCred.user;
+
+        // Sprawdzamy unikalność nazwy w Firestore
+        const q = query(collection(db, 'users'), where('displayName', '==', username));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          // Nazwa zajęta – usuwamy konto i informujemy
+          await deleteUser(user);
+          authError.textContent = 'Nazwa gracza jest już zajęta. Wybierz inną.';
+          resetRegistrationForm();
+          return;
+        }
+
+        // Zapisujemy dokument użytkownika
+        await setDoc(doc(db, 'users', user.uid), {
+          email: user.email,
+          displayName: username,
+          approved: false,
+          role: 'player',
+          totalPoints: 0
+        });
+
+        // Wylogowujemy i informujemy
+        await signOut(auth);
+        alert('Konto utworzone! Poczekaj na akceptację administratora.');
+
+        // Reset formularza
+        emailInput.value = '';
+        passwordInput.value = '';
+        resetRegistrationForm();
+      } catch (err) {
+        authError.textContent = 'Błąd rejestracji: ' + (err.code === 'auth/email-already-in-use' ? 'Ten e-mail jest już zarejestrowany' : err.message);
+        resetRegistrationForm();
+      }
+    }
+
+    function resetRegistrationForm() {
+      usernameInput.classList.add('hidden');
+      createAccountBtn.classList.add('hidden');
+      registerBtn.classList.remove('hidden');
+      loginBtn.classList.remove('hidden');
+      usernameInput.value = '';
+    }
+
+    logoutBtn.addEventListener('click', () => {
+      signOut(auth);
+      resetRegistrationForm(); // gdyby był rozwinięty formularz
+    });
 
     // Obsługa stanu logowania
     onAuthStateChanged(auth, async (user) => {
@@ -171,27 +253,27 @@
       }
       authSection.classList.add('hidden');
       userSection.classList.remove('hidden');
-      // Pobierz dane użytkownika
+
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
         alert('Twoje konto nie istnieje w bazie. Skontaktuj się z adminem.');
-        auth.signOut();
+        signOut(auth);
         return;
       }
       userData = userDoc.data();
       if (!userData.approved) {
         alert('Twoje konto nie zostało jeszcze zatwierdzone.');
-        auth.signOut();
+        signOut(auth);
         return;
       }
+
       userInfo.textContent = `👤 ${userData.displayName} (${userData.totalPoints} pkt)`;
       adminTabNav.classList.toggle('hidden', userData.role !== 'admin');
       loadMatches();
-      // Domyślnie pokaż typowanie
       document.querySelector('[data-tab="typing"]').click();
     });
 
-    // -------------------- Mecze i typowanie --------------------
+    // --- Mecze i typowanie ---
     async function loadMatches() {
       const container = document.getElementById('matchesContainer');
       container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
@@ -245,7 +327,6 @@
         awayScore: parseInt(away),
         timestamp: serverTimestamp()
       };
-      // Sprawdź, czy już istnieje predykcja
       const existingSnap = await getDocs(query(collection(db, 'predictions'), where('matchId', '==', matchId), where('userId', '==', currentUser.uid)));
       if (!existingSnap.empty) {
         await updateDoc(doc(db, 'predictions', existingSnap.docs[0].id), pred);
@@ -255,7 +336,7 @@
       loadMatches();
     };
 
-    // -------------------- Ranking --------------------
+    // --- Ranking ---
     async function loadRanking() {
       const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true), orderBy('totalPoints', 'desc')));
       const tbody = document.getElementById('rankingBody');
@@ -267,10 +348,9 @@
       });
     }
 
-    // -------------------- Admin --------------------
+    // --- Admin ---
     async function loadAdminPanel() {
       if (!userData || userData.role !== 'admin') return;
-      // Zatwierdzanie użytkowników
       const pendingDiv = document.getElementById('pendingUsers');
       pendingDiv.innerHTML = '';
       const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', false)));
@@ -280,15 +360,14 @@
       });
       if (pendingDiv.innerHTML === '') pendingDiv.innerHTML = '<p class="text-muted">Wszyscy zatwierdzeni.</p>';
 
-      // Wprowadzanie wyników meczów
       const adminContainer = document.getElementById('adminResultsContainer');
       adminContainer.innerHTML = '';
       const now = Timestamp.now();
       const matchesSnap = await getDocs(query(collection(db, 'matches'), orderBy('matchDate', 'desc')));
       matchesSnap.forEach(docSnap => {
         const m = { id: docSnap.id, ...docSnap.data() };
-        if (m.homeScore != null && m.homeScore !== undefined) return; // już ma wynik
-        if (now.seconds < m.deadline.seconds) return; // nie można jeszcze
+        if (m.homeScore != null && m.homeScore !== undefined) return;
+        if (now.seconds < m.deadline.seconds) return;
         adminContainer.innerHTML += `
           <div class="card mb-2">
             <div class="card-body">
@@ -313,9 +392,7 @@
       const home = parseInt(document.getElementById(`res-home-${matchId}`).value);
       const away = parseInt(document.getElementById(`res-away-${matchId}`).value);
       if (isNaN(home) || isNaN(away)) return alert('Podaj poprawne liczby');
-      // Zapisz wynik meczu
       await updateDoc(doc(db, 'matches', matchId), { homeScore: home, awayScore: away, scored: false });
-      // Pobierz wszystkie predykcje dla tego meczu
       const predsSnap = await getDocs(query(collection(db, 'predictions'), where('matchId', '==', matchId)));
       const batch = [];
       for (const predDoc of predsSnap.docs) {
@@ -337,14 +414,12 @@
       alert('Punkty przyznane!');
       loadAdminPanel();
       if (userData) {
-        // Odśwież własne punkty w nagłówku
         const fresh = await getDoc(doc(db, 'users', currentUser.uid));
         if (fresh.exists()) userData.totalPoints = fresh.data().totalPoints;
         userInfo.textContent = `👤 ${userData.displayName} (${userData.totalPoints} pkt)`;
       }
     };
 
-    // Dodawanie meczu (admin)
     document.getElementById('addMatchForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const home = document.getElementById('homeTeam').value.trim();
@@ -352,7 +427,7 @@
       const dateStr = document.getElementById('matchDate').value;
       if (!home || !away || !dateStr) return;
       const matchDate = Timestamp.fromDate(new Date(dateStr));
-      const deadline = new Timestamp(matchDate.seconds - 1800, 0); // 30 min przed
+      const deadline = new Timestamp(matchDate.seconds - 1800, 0);
       await setDoc(doc(collection(db, 'matches')), {
         homeTeam: home,
         awayTeam: away,
