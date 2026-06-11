@@ -317,15 +317,26 @@
     };
 
     async function loadRanking() {
-      const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true), orderBy('totalPoints', 'desc')));
-      const tbody = document.getElementById('rankingBody');
-      tbody.innerHTML = '';
-      let pos = 1;
-      usersSnap.forEach(docSnap => {
-        const u = docSnap.data();
-        tbody.innerHTML += `<tr><td>${pos++}</td><td>${u.displayName}</td><td>${u.totalPoints}</td></tr>`;
-      });
-    }
+  try {
+    const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
+    const users = [];
+    usersSnap.forEach(docSnap => {
+      users.push({ ...docSnap.data() });
+    });
+    // Sortowanie malejąco po punktach (brak pola = 0)
+    users.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
+    const tbody = document.getElementById('rankingBody');
+    tbody.innerHTML = '';
+    let pos = 1;
+    users.forEach(u => {
+      tbody.innerHTML += `<tr><td>${pos++}</td><td>${u.displayName}</td><td>${u.totalPoints || 0}</td></tr>`;
+    });
+  } catch (err) {
+    console.error('Błąd rankingu:', err);
+    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="3" class="text-danger">Błąd ładowania rankingu.</td></tr>';
+  }
+}
 
     async function loadAdminPanel() {
       if (!userData || userData.role !== 'admin') return;
