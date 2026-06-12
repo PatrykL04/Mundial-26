@@ -37,14 +37,41 @@
       display: flex;
       overflow: hidden;
     }
+    .gold-bg { background-color: #FFD700 !important; }
+    .silver-bg { background-color: #C0C0C0 !important; }
+    .bronze-bg { background-color: #CD7F32 !important; }
+    .crown { font-size: 1.2em; margin-right: 4px; }
 
-    /* Styl dla podium */
-    .gold-bg { background-color: #FFD700 !important; }   /* złoty */
-    .silver-bg { background-color: #C0C0C0 !important; } /* srebrny */
-    .bronze-bg { background-color: #CD7F32 !important; } /* brązowy */
-    .crown {
-      font-size: 1.2em;
-      margin-right: 4px;
+    .sub-tab.active {
+      font-weight: bold;
+      border-bottom: 3px solid #007bff;
+    }
+    .sub-tab {
+      cursor: pointer;
+      margin-right: 10px;
+      padding-bottom: 3px;
+    }
+
+    .card-exact {
+      background: linear-gradient(180deg, #ffffff 0%, #2e7d32 100%) !important;
+      color: #fff;
+    }
+    .card-winner {
+      background: linear-gradient(180deg, #ffffff 0%, #a5d6a7 100%) !important;
+    }
+    .card-lose {
+      background: linear-gradient(180deg, #ffffff 0%, #ef9a9a 100%) !important;
+    }
+
+    .card-exact .text-muted,
+    .card-exact .text-info,
+    .card-exact .text-warning,
+    .card-exact small {
+      color: #e0e0e0 !important;
+    }
+
+    .filter-row input {
+      max-width: 200px;
     }
   </style>
 </head>
@@ -52,7 +79,6 @@
   <div class="container">
     <h1 class="mb-4 text-center">⚽ Typowanie MŚ 2026</h1>
 
-    <!-- Sekcja logowania -->
     <div id="authSection" class="card p-4 hidden">
       <h3>Zaloguj się lub zarejestruj</h3>
       <input type="email" id="email" class="form-control mb-2" placeholder="E-mail">
@@ -67,7 +93,6 @@
       <p id="authError" class="text-danger mt-2"></p>
     </div>
 
-    <!-- Komunikat oczekiwania na zatwierdzenie -->
     <div id="pendingApproval" class="card p-4 text-center hidden">
       <h3>🕒 Oczekiwanie na zatwierdzenie</h3>
       <p>Twoje konto zostało utworzone, ale administrator musi je zatwierdzić.</p>
@@ -75,7 +100,6 @@
       <button id="pendingLogout" class="btn btn-outline-secondary">Wyloguj</button>
     </div>
 
-    <!-- Panel użytkownika -->
     <div id="userSection" class="hidden">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <span id="userInfo"></span>
@@ -89,7 +113,23 @@
         <li class="nav-item" id="adminTabNav"><button class="nav-link" data-tab="admin">Admin</button></li>
       </ul>
 
-      <div id="typingTab" class="tab-content hidden"><h4>Dostępne mecze</h4><div id="matchesContainer"></div></div>
+      <div id="typingTab" class="tab-content hidden">
+        <div class="d-flex mb-3 justify-content-between align-items-end">
+          <div>
+            <span class="sub-tab active" data-subtab="pending">⏳ Oczekujące</span>
+            <span class="sub-tab" data-subtab="finished">✅ Zakończone</span>
+          </div>
+          <!-- Filtry -->
+          <div class="d-flex gap-2 filter-row">
+            <input type="text" id="filterHome" class="form-control form-control-sm" placeholder="Gospodarz">
+            <input type="text" id="filterAway" class="form-control form-control-sm" placeholder="Gość">
+            <input type="date" id="filterDate" class="form-control form-control-sm">
+          </div>
+        </div>
+        <div id="pendingMatches"></div>
+        <div id="finishedMatches" class="hidden"></div>
+      </div>
+
       <div id="rankingTab" class="tab-content hidden"><h4>Tabela punktów</h4><table class="table table-striped"><thead><tr><th>#</th><th>Gracz</th><th>Punkty</th></tr></thead><tbody id="rankingBody"></tbody></table></div>
       <div id="rulesTab" class="tab-content hidden">
         <h4>Zasady gry</h4>
@@ -139,6 +179,11 @@
     let currentUser = null;
     let userData = null;
 
+    // Przechowywanie danych do filtrowania
+    let allMatchesData = [];
+    let allStatsData = {};
+    let userPredictionsData = {};
+
     const authSection = document.getElementById('authSection');
     const pendingApproval = document.getElementById('pendingApproval');
     const userSection = document.getElementById('userSection');
@@ -162,6 +207,30 @@
       rules: document.getElementById('rulesTab'),
       admin: document.getElementById('adminTab')
     };
+
+    const subTabs = document.querySelectorAll('.sub-tab');
+    const pendingContainer = document.getElementById('pendingMatches');
+    const finishedContainer = document.getElementById('finishedMatches');
+
+    const filterHome = document.getElementById('filterHome');
+    const filterAway = document.getElementById('filterAway');
+    const filterDate = document.getElementById('filterDate');
+
+    let currentSubTab = 'pending';
+
+    subTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        currentSubTab = tab.dataset.subtab;
+        subTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        renderMatches();
+      });
+    });
+
+    // Nasłuchiwanie na filtry
+    [filterHome, filterAway, filterDate].forEach(input => {
+      input.addEventListener('input', renderMatches);
+    });
 
     mainTabs.addEventListener('click', (e) => {
       const tab = e.target.dataset.tab;
@@ -325,49 +394,87 @@
       userSection.classList.remove('hidden');
       userInfo.textContent = `👤 ${userData.displayName} (${userData.totalPoints || 0} pkt)`;
       adminTabNav.classList.toggle('hidden', userData.role !== 'admin');
-      loadMatches();
+      await loadMatches();
       document.querySelector('[data-tab="typing"]').click();
     });
 
-    // ---------- Mecze i typowanie (z paskiem statystyk) ----------
+    // ---------- Pobieranie danych i filtrowanie ----------
     async function loadMatches() {
-      const container = document.getElementById('matchesContainer');
-      container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+      pendingContainer.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+      finishedContainer.innerHTML = '';
 
       const matchesSnap = await getDocs(query(collection(db, 'matches'), orderBy('matchDate', 'asc')));
-      const now = Timestamp.now();
+      allMatchesData = [];
+      matchesSnap.forEach(docSnap => allMatchesData.push({ id: docSnap.id, ...docSnap.data() }));
 
       const allPredsSnap = await getDocs(collection(db, 'predictions'));
-      const statsMap = {};
+      allStatsData = {};
       allPredsSnap.forEach(d => {
         const p = d.data();
-        if (!statsMap[p.matchId]) statsMap[p.matchId] = { home: 0, draw: 0, away: 0 };
-        if (p.homeScore > p.awayScore) statsMap[p.matchId].home++;
-        else if (p.homeScore === p.awayScore) statsMap[p.matchId].draw++;
-        else statsMap[p.matchId].away++;
+        if (!allStatsData[p.matchId]) allStatsData[p.matchId] = { home: 0, draw: 0, away: 0 };
+        if (p.homeScore > p.awayScore) allStatsData[p.matchId].home++;
+        else if (p.homeScore === p.awayScore) allStatsData[p.matchId].draw++;
+        else allStatsData[p.matchId].away++;
       });
 
       const userPredsSnap = await getDocs(query(collection(db, 'predictions'), where('userId', '==', currentUser.uid)));
-      const userPredictions = {};
-      userPredsSnap.forEach(d => { userPredictions[d.data().matchId] = { id: d.id, ...d.data() }; });
+      userPredictionsData = {};
+      userPredsSnap.forEach(d => { userPredictionsData[d.data().matchId] = { id: d.id, ...d.data() }; });
 
-      let html = '';
-      matchesSnap.forEach(docSnap => {
-        const m = { id: docSnap.id, ...docSnap.data() };
-        const pred = userPredictions[m.id];
+      renderMatches();
+    }
+
+    function getFilteredMatches() {
+      const homeFilter = filterHome.value.trim().toLowerCase();
+      const awayFilter = filterAway.value.trim().toLowerCase();
+      const dateFilter = filterDate.value; // format YYYY-MM-DD
+
+      return allMatchesData.filter(m => {
+        if (homeFilter && !m.homeTeam.toLowerCase().includes(homeFilter)) return false;
+        if (awayFilter && !m.awayTeam.toLowerCase().includes(awayFilter)) return false;
+        if (dateFilter) {
+          const matchDateStr = new Date(m.matchDate.seconds * 1000).toISOString().split('T')[0];
+          if (matchDateStr !== dateFilter) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderMatches() {
+      const filtered = getFilteredMatches();
+      const now = Timestamp.now();
+
+      let pendingHtml = '';
+      let finishedHtml = '';
+
+      filtered.forEach(m => {
+        const pred = userPredictionsData[m.id];
         const deadlinePassed = now.seconds >= m.deadline.seconds;
         const scoreSet = m.homeScore !== undefined && m.homeScore !== null;
         const scoreText = scoreSet ? `${m.homeScore} - ${m.awayScore}` : '? - ?';
         const canPredict = !deadlinePassed && !scoreSet;
 
-        const st = statsMap[m.id] || { home: 0, draw: 0, away: 0 };
+        const st = allStatsData[m.id] || { home: 0, draw: 0, away: 0 };
         const total = st.home + st.draw + st.away;
         const homePct = total ? Math.round(st.home / total * 100) : 0;
         const drawPct = total ? Math.round(st.draw / total * 100) : 0;
         const awayPct = 100 - homePct - drawPct;
 
-        html += `
-          <div class="card mb-2">
+        let cardExtraClass = '';
+        if (scoreSet && pred) {
+          if (pred.homeScore === m.homeScore && pred.awayScore === m.awayScore) {
+            cardExtraClass = 'card-exact';
+          } else if ((pred.homeScore > pred.awayScore && m.homeScore > m.awayScore) ||
+                     (pred.homeScore < pred.awayScore && m.homeScore < m.awayScore) ||
+                     (pred.homeScore === pred.awayScore && m.homeScore === m.awayScore)) {
+            cardExtraClass = 'card-winner';
+          } else {
+            cardExtraClass = 'card-lose';
+          }
+        }
+
+        const matchHtml = `
+          <div class="card mb-2 ${cardExtraClass}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <div><strong>${m.homeTeam} vs ${m.awayTeam}</strong></div>
@@ -401,9 +508,22 @@
               </div>
             </div>
           </div>`;
+
+        if (scoreSet) {
+          finishedHtml += matchHtml;
+        } else {
+          pendingHtml += matchHtml;
+        }
       });
-      if (html === '') html = '<p>Brak nadchodzących meczów.</p>';
-      container.innerHTML = html;
+
+      if (pendingHtml === '') pendingHtml = '<p>Brak oczekujących meczów.</p>';
+      if (finishedHtml === '') finishedHtml = '<p>Brak zakończonych meczów.</p>';
+
+      pendingContainer.innerHTML = pendingHtml;
+      finishedContainer.innerHTML = finishedHtml;
+
+      pendingContainer.classList.toggle('hidden', currentSubTab !== 'pending');
+      finishedContainer.classList.toggle('hidden', currentSubTab !== 'finished');
     }
 
     window.savePrediction = async (matchId) => {
@@ -423,10 +543,10 @@
       } else {
         await setDoc(doc(collection(db, 'predictions')), pred);
       }
-      loadMatches();
+      // Odśwież dane lokalne i renderuj
+      await loadMatches();
     };
 
-    // ---------- Ranking z podium ----------
     async function loadRanking() {
       try {
         const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
@@ -460,7 +580,6 @@
       }
     }
 
-    // ---------- Admin ----------
     async function loadAdminPanel() {
       if (!userData || userData.role !== 'admin') return;
       const pendingDiv = document.getElementById('pendingUsers');
