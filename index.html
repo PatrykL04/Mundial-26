@@ -37,6 +37,15 @@
       display: flex;
       overflow: hidden;
     }
+
+    /* Styl dla podium */
+    .gold-bg { background-color: #FFD700 !important; }   /* złoty */
+    .silver-bg { background-color: #C0C0C0 !important; } /* srebrny */
+    .bronze-bg { background-color: #CD7F32 !important; } /* brązowy */
+    .crown {
+      font-size: 1.2em;
+      margin-right: 4px;
+    }
   </style>
 </head>
 <body class="py-4">
@@ -328,9 +337,8 @@
       const matchesSnap = await getDocs(query(collection(db, 'matches'), orderBy('matchDate', 'asc')));
       const now = Timestamp.now();
 
-      // Wszystkie predykcje – do statystyk
       const allPredsSnap = await getDocs(collection(db, 'predictions'));
-      const statsMap = {}; // matchId -> { home, draw, away }
+      const statsMap = {};
       allPredsSnap.forEach(d => {
         const p = d.data();
         if (!statsMap[p.matchId]) statsMap[p.matchId] = { home: 0, draw: 0, away: 0 };
@@ -339,7 +347,6 @@
         else statsMap[p.matchId].away++;
       });
 
-      // Predykcje bieżącego użytkownika
       const userPredsSnap = await getDocs(query(collection(db, 'predictions'), where('userId', '==', currentUser.uid)));
       const userPredictions = {};
       userPredsSnap.forEach(d => { userPredictions[d.data().matchId] = { id: d.id, ...d.data() }; });
@@ -353,7 +360,6 @@
         const scoreText = scoreSet ? `${m.homeScore} - ${m.awayScore}` : '? - ?';
         const canPredict = !deadlinePassed && !scoreSet;
 
-        // Statystyki
         const st = statsMap[m.id] || { home: 0, draw: 0, away: 0 };
         const total = st.home + st.draw + st.away;
         const homePct = total ? Math.round(st.home / total * 100) : 0;
@@ -378,7 +384,6 @@
               ` : (pred ? `<div class="mt-2 text-info">Twój typ: ${pred.homeScore} - ${pred.awayScore}</div>` : '')}
               ${deadlinePassed && !scoreSet ? '<div class="text-warning small">Oczekiwanie na wynik</div>' : ''}
 
-              <!-- Pasek rozkładu typów -->
               <div class="mt-2">
                 <div class="d-flex align-items-center">
                   <div class="flex-grow-1 stat-bar">
@@ -418,21 +423,37 @@
       } else {
         await setDoc(doc(collection(db, 'predictions')), pred);
       }
-      loadMatches(); // odświeża listę i statystyki
+      loadMatches();
     };
 
-    // ---------- Ranking ----------
+    // ---------- Ranking z podium ----------
     async function loadRanking() {
       try {
         const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
         const users = [];
         usersSnap.forEach(docSnap => users.push(docSnap.data()));
         users.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
         const tbody = document.getElementById('rankingBody');
         tbody.innerHTML = '';
         let pos = 1;
         users.forEach(u => {
-          tbody.innerHTML += `<tr><td>${pos++}</td><td>${u.displayName}</td><td>${u.totalPoints || 0}</td></tr>`;
+          let rowClass = '';
+          let crownIcon = '';
+          if (pos === 1) {
+            rowClass = 'gold-bg';
+            crownIcon = '<span class="crown">👑</span>';
+          } else if (pos === 2) {
+            rowClass = 'silver-bg';
+          } else if (pos === 3) {
+            rowClass = 'bronze-bg';
+          }
+
+          tbody.innerHTML += `<tr class="${rowClass}">
+            <td>${pos++}</td>
+            <td>${crownIcon}${u.displayName}</td>
+            <td>${u.totalPoints || 0}</td>
+          </tr>`;
         });
       } catch (err) {
         document.getElementById('rankingBody').innerHTML = '<tr><td colspan="3" class="text-danger">Błąd ładowania rankingu.</td></tr>';
