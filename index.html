@@ -123,7 +123,6 @@
       </ul>
 
       <div id="typingTab" class="tab-content hidden">
-        <!-- Normalny widok z podzakładkami -->
         <div id="normalTypingView">
           <div class="d-flex mb-3 justify-content-between align-items-end">
             <div>
@@ -140,7 +139,6 @@
           <div id="finishedMatches" class="hidden"></div>
         </div>
 
-        <!-- Widok historii gracza (ukryty domyślnie) -->
         <div id="playerHistoryContainer" class="hidden">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 id="historyTitle">📋 Historia typów</h4>
@@ -572,7 +570,7 @@
       await loadMatches();
     };
 
-    // ---------- Ranking z klikalnymi nazwami ----------
+    // ---------- Ranking ----------
     async function loadRanking() {
       try {
         const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
@@ -606,7 +604,7 @@
       }
     }
 
-    // ---------- Podgląd historii gracza ----------
+    // ---------- Historia gracza ----------
     window.viewPlayerHistory = async (uid) => {
       try {
         const userDoc = await getDoc(doc(db, 'users', uid));
@@ -616,9 +614,19 @@
         historyTitle.textContent = `📋 Historia typów: ${playerName}`;
         playerHistoryContent.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
 
-        // Pobierz zakończone mecze
+        // Przełącz na zakładkę "Typuj mecze", jeśli nie jest aktywna
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+        tabs.typing.classList.remove('hidden');
+        document.querySelector('[data-tab="typing"]').classList.add('active');
+
+        // Pokaż kontener historii i ukryj normalny widok
+        normalTypingView.classList.add('hidden');
+        playerHistoryContainer.classList.remove('hidden');
+        isViewingHistory = true;
+
+        // Pobierz zakończone mecze (wynik istnieje)
         const finishedMatches = allMatchesData.filter(m => m.homeScore !== undefined && m.homeScore !== null);
-        // Pobierz predykcje gracza
         const predsSnap = await getDocs(query(collection(db, 'predictions'), where('userId', '==', uid)));
         const predsMap = {};
         predsSnap.forEach(d => { predsMap[d.data().matchId] = d.data(); });
@@ -655,10 +663,6 @@
         if (html === '') html = '<p>Brak zakończonych meczów.</p>';
         playerHistoryContent.innerHTML = html;
 
-        // Przełącz widok
-        isViewingHistory = true;
-        normalTypingView.classList.add('hidden');
-        playerHistoryContainer.classList.remove('hidden');
       } catch (err) {
         alert('Błąd ładowania historii.');
       }
