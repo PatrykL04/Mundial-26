@@ -6,39 +6,38 @@
   <title>Mistrzostwa Świata – Typowanie</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-  /* Gradient tła strony: morski → jasnozielony */
-  body {
-    background: linear-gradient(180deg, #008080 0%, #a8e6a8 100%);
-    background-attachment: fixed; /* gradient nie przewija się */
-    min-height: 100vh;
-    margin: 0;
-  }
-  .container {
-    max-width: 800px;
-    background-color: rgba(255,255,255,0.9); /* lekko przezroczyste białe tło kontenera, aby treść była czytelna */
-    border-radius: 12px;
-    padding: 20px;
-    margin-top: 30px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.1);
-  }
-  .hidden { display: none !important; }
-  .tab-content { margin-top: 1rem; }
-
-  /* Błękitne obramowanie kart z meczami */
-  .card {
-    border: 2px solid #6dc5d0 !important; /* błękitny */
-    border-radius: 10px;
-    transition: box-shadow 0.2s;
-  }
-  .card:hover {
-    box-shadow: 0 4px 12px rgba(0,150,180,0.2);
-  }
-
-  /* Opcjonalnie: delikatne tło kart */
-  .card-body {
-    background-color: #ffffff;
-  }
-</style>
+    body {
+      background: linear-gradient(180deg, #008080 0%, #a8e6a8 100%);
+      background-attachment: fixed;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      max-width: 800px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 30px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+    }
+    .hidden { display: none !important; }
+    .tab-content { margin-top: 1rem; }
+    .card {
+      border: 2px solid #6dc5d0 !important;
+      border-radius: 10px;
+      transition: box-shadow 0.2s;
+    }
+    .card:hover {
+      box-shadow: 0 4px 12px rgba(0, 150, 180, 0.2);
+    }
+    .stat-bar {
+      height: 10px;
+      background: #e9ecef;
+      border-radius: 5px;
+      display: flex;
+      overflow: hidden;
+    }
+  </style>
 </head>
 <body class="py-4">
   <div class="container">
@@ -57,6 +56,14 @@
         <button id="resetPasswordBtn" class="btn btn-link btn-sm ms-auto">Zapomniałem hasła</button>
       </div>
       <p id="authError" class="text-danger mt-2"></p>
+    </div>
+
+    <!-- Komunikat oczekiwania na zatwierdzenie -->
+    <div id="pendingApproval" class="card p-4 text-center hidden">
+      <h3>🕒 Oczekiwanie na zatwierdzenie</h3>
+      <p>Twoje konto zostało utworzone, ale administrator musi je zatwierdzić.</p>
+      <p>Po zatwierdzeniu odśwież stronę lub zaloguj się ponownie.</p>
+      <button id="pendingLogout" class="btn btn-outline-secondary">Wyloguj</button>
     </div>
 
     <!-- Panel użytkownika -->
@@ -96,15 +103,16 @@
           <div class="col-md-3"><input type="datetime-local" id="matchDate" class="form-control" required></div>
           <div class="col-md-1"><button type="submit" class="btn btn-success">+</button></div>
         </form>
-        <h4>Wprowadź wyniki meczów</h4><div id="adminResultsContainer"></div>
+        <h4>Zarządzaj wynikami meczów</h4>
+        <div id="adminResultsContainer"></div>
       </div>
     </div>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, updateDoc, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, updateDoc, serverTimestamp, Timestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, sendPasswordResetEmail, fetchSignInMethodsForEmail } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBM7MdbHtZDwqQVxFrsz1trXYlZ_Bd9wWk",
@@ -123,6 +131,7 @@
     let userData = null;
 
     const authSection = document.getElementById('authSection');
+    const pendingApproval = document.getElementById('pendingApproval');
     const userSection = document.getElementById('userSection');
     const emailInput = document.getElementById('email');
     const passwordInput = document.getElementById('password');
@@ -131,6 +140,7 @@
     const registerBtn = document.getElementById('registerBtn');
     const createAccountBtn = document.getElementById('createAccountBtn');
     const resetPasswordBtn = document.getElementById('resetPasswordBtn');
+    const pendingLogout = document.getElementById('pendingLogout');
     const logoutBtn = document.getElementById('logoutBtn');
     const authError = document.getElementById('authError');
     const userInfo = document.getElementById('userInfo');
@@ -166,6 +176,7 @@
         await signInWithEmailAndPassword(auth, email, password);
         emailInput.value = '';
         passwordInput.value = '';
+        resetRegistrationForm();
       } catch (err) {
         authError.textContent = 'Błąd logowania: ' + (err.code === 'auth/user-not-found' ? 'Nie ma takiego konta' : err.message);
       }
@@ -193,35 +204,54 @@
       }
 
       try {
-        const userCred = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCred.user;
+        const methods = await fetchSignInMethodsForEmail(auth, email);
+        if (methods.length > 0) {
+          authError.textContent = 'Ten e-mail jest już zarejestrowany.';
+          return;
+        }
+      } catch (err) {
+        authError.textContent = 'Błąd sprawdzania e‑maila: ' + err.message;
+        return;
+      }
 
+      try {
         const q = query(collection(db, 'users'), where('displayName', '==', username));
         const snap = await getDocs(q);
         if (!snap.empty) {
-          await deleteUser(user);
           authError.textContent = 'Nazwa gracza jest już zajęta. Wybierz inną.';
-          resetRegistrationForm();
           return;
         }
+      } catch (err) {
+        authError.textContent = 'Błąd sprawdzania nazwy: ' + err.message;
+        return;
+      }
 
+      let user;
+      try {
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        user = userCred.user;
+      } catch (err) {
+        authError.textContent = 'Błąd rejestracji: ' + (err.code === 'auth/email-already-in-use' ? 'E‑mail już zajęty' : err.message);
+        return;
+      }
+
+      try {
         await setDoc(doc(db, 'users', user.uid), {
-          email: user.email,
+          email: email,
           displayName: username,
           approved: false,
           role: 'player',
           totalPoints: 0
         });
-
-        await signOut(auth);
-        alert('Konto utworzone! Poczekaj na akceptację administratora.');
-        emailInput.value = '';
-        passwordInput.value = '';
-        resetRegistrationForm();
       } catch (err) {
-        authError.textContent = 'Błąd rejestracji: ' + (err.code === 'auth/email-already-in-use' ? 'Ten e-mail jest już zarejestrowany' : err.message);
-        resetRegistrationForm();
+        await deleteUser(user);
+        authError.textContent = 'Błąd zapisu konta. Spróbuj ponownie.';
+        return;
       }
+
+      emailInput.value = '';
+      passwordInput.value = '';
+      resetRegistrationForm();
     }
 
     function resetRegistrationForm() {
@@ -247,51 +277,74 @@
       }
     });
 
-    logoutBtn.addEventListener('click', () => {
-      signOut(auth);
-      resetRegistrationForm();
-    });
+    logoutBtn.addEventListener('click', () => signOut(auth));
+    pendingLogout.addEventListener('click', () => signOut(auth));
 
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
+      authSection.classList.add('hidden');
+      pendingApproval.classList.add('hidden');
+      userSection.classList.add('hidden');
+
       if (!user) {
         authSection.classList.remove('hidden');
-        userSection.classList.add('hidden');
         userData = null;
         return;
       }
-      authSection.classList.add('hidden');
-      userSection.classList.remove('hidden');
 
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      let userDoc;
+      try {
+        userDoc = await getDoc(doc(db, 'users', user.uid));
+      } catch (err) {
+        alert('Błąd połączenia z bazą. Spróbuj odświeżyć stronę.');
+        return;
+      }
+
       if (!userDoc.exists()) {
-        alert('Twoje konto nie istnieje w bazie. Skontaktuj się z adminem.');
-        signOut(auth);
-        return;
-      }
-      userData = userDoc.data();
-      if (!userData.approved) {
-        alert('Twoje konto nie zostało jeszcze zatwierdzone.');
-        signOut(auth);
+        await deleteUser(user);
+        alert('Twoje konto było niekompletne i zostało usunięte. Zarejestruj się ponownie.');
         return;
       }
 
-      userInfo.textContent = `👤 ${userData.displayName} (${userData.totalPoints} pkt)`;
+      userData = userDoc.data();
+
+      if (!userData.approved) {
+        pendingApproval.classList.remove('hidden');
+        return;
+      }
+
+      userSection.classList.remove('hidden');
+      userInfo.textContent = `👤 ${userData.displayName} (${userData.totalPoints || 0} pkt)`;
       adminTabNav.classList.toggle('hidden', userData.role !== 'admin');
       loadMatches();
       document.querySelector('[data-tab="typing"]').click();
     });
 
+    // ---------- Mecze i typowanie (z paskiem statystyk) ----------
     async function loadMatches() {
       const container = document.getElementById('matchesContainer');
       container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
       const matchesSnap = await getDocs(query(collection(db, 'matches'), orderBy('matchDate', 'asc')));
       const now = Timestamp.now();
-      let html = '';
-      const predsSnap = await getDocs(query(collection(db, 'predictions'), where('userId', '==', currentUser.uid)));
-      const userPredictions = {};
-      predsSnap.forEach(d => { userPredictions[d.data().matchId] = { id: d.id, ...d.data() }; });
 
+      // Wszystkie predykcje – do statystyk
+      const allPredsSnap = await getDocs(collection(db, 'predictions'));
+      const statsMap = {}; // matchId -> { home, draw, away }
+      allPredsSnap.forEach(d => {
+        const p = d.data();
+        if (!statsMap[p.matchId]) statsMap[p.matchId] = { home: 0, draw: 0, away: 0 };
+        if (p.homeScore > p.awayScore) statsMap[p.matchId].home++;
+        else if (p.homeScore === p.awayScore) statsMap[p.matchId].draw++;
+        else statsMap[p.matchId].away++;
+      });
+
+      // Predykcje bieżącego użytkownika
+      const userPredsSnap = await getDocs(query(collection(db, 'predictions'), where('userId', '==', currentUser.uid)));
+      const userPredictions = {};
+      userPredsSnap.forEach(d => { userPredictions[d.data().matchId] = { id: d.id, ...d.data() }; });
+
+      let html = '';
       matchesSnap.forEach(docSnap => {
         const m = { id: docSnap.id, ...docSnap.data() };
         const pred = userPredictions[m.id];
@@ -299,6 +352,13 @@
         const scoreSet = m.homeScore !== undefined && m.homeScore !== null;
         const scoreText = scoreSet ? `${m.homeScore} - ${m.awayScore}` : '? - ?';
         const canPredict = !deadlinePassed && !scoreSet;
+
+        // Statystyki
+        const st = statsMap[m.id] || { home: 0, draw: 0, away: 0 };
+        const total = st.home + st.draw + st.away;
+        const homePct = total ? Math.round(st.home / total * 100) : 0;
+        const drawPct = total ? Math.round(st.draw / total * 100) : 0;
+        const awayPct = 100 - homePct - drawPct;
 
         html += `
           <div class="card mb-2">
@@ -317,6 +377,23 @@
                 </div>
               ` : (pred ? `<div class="mt-2 text-info">Twój typ: ${pred.homeScore} - ${pred.awayScore}</div>` : '')}
               ${deadlinePassed && !scoreSet ? '<div class="text-warning small">Oczekiwanie na wynik</div>' : ''}
+
+              <!-- Pasek rozkładu typów -->
+              <div class="mt-2">
+                <div class="d-flex align-items-center">
+                  <div class="flex-grow-1 stat-bar">
+                    <div style="width: ${homePct}%; background: #3498db; height: 100%;" title="${m.homeTeam}: ${homePct}%"></div>
+                    <div style="width: ${drawPct}%; background: #95a5a6; height: 100%;" title="Remis: ${drawPct}%"></div>
+                    <div style="width: ${awayPct}%; background: #e74c3c; height: 100%;" title="${m.awayTeam}: ${awayPct}%"></div>
+                  </div>
+                  <small class="ms-2 text-muted">${total} typów</small>
+                </div>
+                <div class="d-flex justify-content-between small text-muted mt-1">
+                  <span>${m.homeTeam} ${homePct}%</span>
+                  <span>Remis ${drawPct}%</span>
+                  <span>${m.awayTeam} ${awayPct}%</span>
+                </div>
+              </div>
             </div>
           </div>`;
       });
@@ -341,31 +418,28 @@
       } else {
         await setDoc(doc(collection(db, 'predictions')), pred);
       }
-      loadMatches();
+      loadMatches(); // odświeża listę i statystyki
     };
 
+    // ---------- Ranking ----------
     async function loadRanking() {
-  try {
-    const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
-    const users = [];
-    usersSnap.forEach(docSnap => {
-      users.push({ ...docSnap.data() });
-    });
-    // Sortowanie malejąco po punktach (brak pola = 0)
-    users.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+      try {
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
+        const users = [];
+        usersSnap.forEach(docSnap => users.push(docSnap.data()));
+        users.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+        const tbody = document.getElementById('rankingBody');
+        tbody.innerHTML = '';
+        let pos = 1;
+        users.forEach(u => {
+          tbody.innerHTML += `<tr><td>${pos++}</td><td>${u.displayName}</td><td>${u.totalPoints || 0}</td></tr>`;
+        });
+      } catch (err) {
+        document.getElementById('rankingBody').innerHTML = '<tr><td colspan="3" class="text-danger">Błąd ładowania rankingu.</td></tr>';
+      }
+    }
 
-    const tbody = document.getElementById('rankingBody');
-    tbody.innerHTML = '';
-    let pos = 1;
-    users.forEach(u => {
-      tbody.innerHTML += `<tr><td>${pos++}</td><td>${u.displayName}</td><td>${u.totalPoints || 0}</td></tr>`;
-    });
-  } catch (err) {
-    console.error('Błąd rankingu:', err);
-    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="3" class="text-danger">Błąd ładowania rankingu.</td></tr>';
-  }
-}
-
+    // ---------- Admin ----------
     async function loadAdminPanel() {
       if (!userData || userData.role !== 'admin') return;
       const pendingDiv = document.getElementById('pendingUsers');
@@ -383,20 +457,44 @@
       const matchesSnap = await getDocs(query(collection(db, 'matches'), orderBy('matchDate', 'desc')));
       matchesSnap.forEach(docSnap => {
         const m = { id: docSnap.id, ...docSnap.data() };
-        if (m.homeScore != null && m.homeScore !== undefined) return;
-        if (now.seconds < m.deadline.seconds) return;
-        adminContainer.innerHTML += `
-          <div class="card mb-2">
-            <div class="card-body">
-              <strong>${m.homeTeam} vs ${m.awayTeam}</strong> (${new Date(m.matchDate.seconds*1000).toLocaleString()})
-              <div class="input-group mt-2">
-                <input type="number" class="form-control form-control-sm" placeholder="${m.homeTeam}" min="0" id="res-home-${m.id}">
-                <span class="input-group-text">-</span>
-                <input type="number" class="form-control form-control-sm" placeholder="${m.awayTeam}" min="0" id="res-away-${m.id}">
-                <button class="btn btn-sm btn-warning" onclick="setResult('${m.id}')">Zapisz wynik i licz punkty</button>
+        const hasScore = m.homeScore !== undefined && m.homeScore !== null;
+
+        if (hasScore && m.scored) {
+          adminContainer.innerHTML += `
+            <div class="card mb-2">
+              <div class="card-body">
+                <strong>${m.homeTeam} vs ${m.awayTeam}</strong> (${new Date(m.matchDate.seconds*1000).toLocaleString()})
+                <div>Wynik: ${m.homeScore} - ${m.awayScore}</div>
+                <button class="btn btn-sm btn-danger mt-2" onclick="revertResult('${m.id}')">Cofnij wynik i punkty</button>
               </div>
-            </div>
-          </div>`;
+            </div>`;
+        } else if (hasScore && !m.scored) {
+          adminContainer.innerHTML += `
+            <div class="card mb-2">
+              <div class="card-body">
+                <strong>${m.homeTeam} vs ${m.awayTeam}</strong> (${new Date(m.matchDate.seconds*1000).toLocaleString()})
+                <div class="input-group mt-2">
+                  <input type="number" class="form-control form-control-sm" value="${m.homeScore}" id="res-home-${m.id}">
+                  <span class="input-group-text">-</span>
+                  <input type="number" class="form-control form-control-sm" value="${m.awayScore}" id="res-away-${m.id}">
+                  <button class="btn btn-sm btn-warning" onclick="setResult('${m.id}')">Przyznaj punkty</button>
+                </div>
+              </div>
+            </div>`;
+        } else if (now.seconds >= m.deadline.seconds) {
+          adminContainer.innerHTML += `
+            <div class="card mb-2">
+              <div class="card-body">
+                <strong>${m.homeTeam} vs ${m.awayTeam}</strong> (${new Date(m.matchDate.seconds*1000).toLocaleString()})
+                <div class="input-group mt-2">
+                  <input type="number" class="form-control form-control-sm" placeholder="${m.homeTeam}" min="0" id="res-home-${m.id}">
+                  <span class="input-group-text">-</span>
+                  <input type="number" class="form-control form-control-sm" placeholder="${m.awayTeam}" min="0" id="res-away-${m.id}">
+                  <button class="btn btn-sm btn-warning" onclick="setResult('${m.id}')">Zapisz wynik i licz punkty</button>
+                </div>
+              </div>
+            </div>`;
+        }
       });
     }
 
@@ -405,13 +503,49 @@
       loadAdminPanel();
     };
 
+    window.revertResult = async (matchId) => {
+      if (!confirm('Cofnąć wynik i odjąć przyznane punkty? Tej operacji nie da się cofnąć.')) return;
+      const matchRef = doc(db, 'matches', matchId);
+      const matchSnap = await getDoc(matchRef);
+      if (!matchSnap.exists()) return;
+      const match = matchSnap.data();
+      const predsSnap = await getDocs(query(collection(db, 'predictions'), where('matchId', '==', matchId)));
+
+      const batch = writeBatch(db);
+      for (const predDoc of predsSnap.docs) {
+        const p = predDoc.data();
+        let points = 0;
+        if (p.homeScore === match.homeScore && p.awayScore === match.awayScore) points = 5;
+        else if ((p.homeScore > p.awayScore && match.homeScore > match.awayScore) ||
+                 (p.homeScore < p.awayScore && match.homeScore < match.awayScore) ||
+                 (p.homeScore === p.awayScore && match.homeScore === match.awayScore)) points = 3;
+        if (points > 0) {
+          const userRef = doc(db, 'users', p.userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const currentTotal = userSnap.data().totalPoints || 0;
+            batch.update(userRef, { totalPoints: Math.max(0, currentTotal - points) });
+          }
+        }
+      }
+      batch.update(matchRef, { homeScore: null, awayScore: null, scored: false });
+      await batch.commit();
+      alert('Wynik cofnięty, punkty odjęte.');
+      loadAdminPanel();
+      if (userData) {
+        const fresh = await getDoc(doc(db, 'users', currentUser.uid));
+        if (fresh.exists()) userData.totalPoints = fresh.data().totalPoints;
+        userInfo.textContent = `👤 ${userData.displayName} (${userData.totalPoints} pkt)`;
+      }
+    };
+
     window.setResult = async (matchId) => {
       const home = parseInt(document.getElementById(`res-home-${matchId}`).value);
       const away = parseInt(document.getElementById(`res-away-${matchId}`).value);
       if (isNaN(home) || isNaN(away)) return alert('Podaj poprawne liczby');
       await updateDoc(doc(db, 'matches', matchId), { homeScore: home, awayScore: away, scored: false });
       const predsSnap = await getDocs(query(collection(db, 'predictions'), where('matchId', '==', matchId)));
-      const batch = [];
+      const batch = writeBatch(db);
       for (const predDoc of predsSnap.docs) {
         const p = predDoc.data();
         let points = 0;
@@ -422,12 +556,12 @@
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             const currentTotal = userSnap.data().totalPoints || 0;
-            batch.push(updateDoc(userRef, { totalPoints: currentTotal + points }));
+            batch.update(userRef, { totalPoints: currentTotal + points });
           }
         }
       }
-      await Promise.all(batch);
-      await updateDoc(doc(db, 'matches', matchId), { scored: true });
+      batch.update(doc(db, 'matches', matchId), { scored: true });
+      await batch.commit();
       alert('Punkty przyznane!');
       loadAdminPanel();
       if (userData) {
