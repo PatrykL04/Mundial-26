@@ -54,7 +54,7 @@
 
     .card-exact {
       background: linear-gradient(180deg, #ffffff 0%, #2e7d32 100%) !important;
-      color: #FFD700 !important;
+      color: #fff;
     }
     .card-winner {
       background: linear-gradient(180deg, #ffffff 0%, #a5d6a7 100%) !important;
@@ -66,10 +66,38 @@
     .card-exact .text-muted,
     .card-exact .text-info,
     .card-exact .text-warning,
-    .card-exact small,
-    .card-exact strong,
-    .card-exact div {
-      color: #FFD700 !important;
+    .card-exact small {
+      color: #e0e0e0 !important;
+    }
+
+    /* Animowana ramka dla oczekujących meczów */
+    @keyframes borderPulse {
+      0%   { border-color: #f1c40f; }
+      50%  { border-color: #e67e22; }
+      100% { border-color: #f1c40f; }
+    }
+
+    .card-awaiting {
+      border-width: 3px !important;
+      border-style: solid !important;
+      animation: borderPulse 2s infinite;
+      background: rgba(0,0,0,0.05);
+    }
+
+    .card-awaiting,
+    .card-awaiting .card-body,
+    .card-awaiting strong,
+    .card-awaiting .text-muted,
+    .card-awaiting .text-info,
+    .card-awaiting .text-warning,
+    .card-awaiting small,
+    .card-awaiting div {
+      color: #fff !important;
+      text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
     }
 
     .filter-row input {
@@ -500,6 +528,11 @@
           }
         }
 
+        // Animowana ramka dla oczekujących (po deadlinie, bez wyniku)
+        if (deadlinePassed && !scoreSet) {
+          cardExtraClass += ' card-awaiting';
+        }
+
         const matchHtml = `
           <div class="card mb-2 ${cardExtraClass}">
             <div class="card-body">
@@ -572,7 +605,6 @@
       await loadMatches();
     };
 
-    // ---------- Ranking ----------
     async function loadRanking() {
       try {
         const usersSnap = await getDocs(query(collection(db, 'users'), where('approved', '==', true)));
@@ -606,7 +638,6 @@
       }
     }
 
-    // ---------- Historia gracza ----------
     window.viewPlayerHistory = async (uid) => {
       try {
         const userDoc = await getDoc(doc(db, 'users', uid));
@@ -616,18 +647,15 @@
         historyTitle.textContent = `📋 Historia typów: ${playerName}`;
         playerHistoryContent.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
 
-        // Przełącz na zakładkę "Typuj mecze", jeśli nie jest aktywna
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
         document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
         tabs.typing.classList.remove('hidden');
         document.querySelector('[data-tab="typing"]').classList.add('active');
 
-        // Pokaż kontener historii i ukryj normalny widok
         normalTypingView.classList.add('hidden');
         playerHistoryContainer.classList.remove('hidden');
         isViewingHistory = true;
 
-        // Pobierz zakończone mecze (wynik istnieje)
         const finishedMatches = allMatchesData.filter(m => m.homeScore !== undefined && m.homeScore !== null);
         const predsSnap = await getDocs(query(collection(db, 'predictions'), where('userId', '==', uid)));
         const predsMap = {};
@@ -677,7 +705,6 @@
       renderMatches();
     }
 
-    // ---------- Admin ----------
     async function loadAdminPanel() {
       if (!userData || userData.role !== 'admin') return;
       const pendingDiv = document.getElementById('pendingUsers');
