@@ -70,35 +70,33 @@
       color: #e0e0e0 !important;
     }
 
-    /* Animowana ramka dla oczekujących meczów */
-    @keyframes borderPulse {
-      0%   { border-color: #f1c40f; }
-      50%  { border-color: #e67e22; }
-      100% { border-color: #f1c40f; }
-    }
+    /* Animowane TŁO dla oczekujących meczów, czerwona ramka */
+@keyframes bgPulse {
+  0%   { background: linear-gradient(135deg, #f1c40f, #e67e22); }
+  50%  { background: linear-gradient(135deg, #e67e22, #f1c40f); }
+  100% { background: linear-gradient(135deg, #f1c40f, #e67e22); }
+}
 
-    .card-awaiting {
-      border-width: 3px !important;
-      border-style: solid !important;
-      animation: borderPulse 2s infinite;
-      background: rgba(0,0,0,0.05);
-    }
+.card-awaiting {
+  border: 3px solid #e74c3c !important; /* czerwona ramka, stała */
+  animation: bgPulse 2s infinite;
+}
 
-    .card-awaiting,
-    .card-awaiting .card-body,
-    .card-awaiting strong,
-    .card-awaiting .text-muted,
-    .card-awaiting .text-info,
-    .card-awaiting .text-warning,
-    .card-awaiting small,
-    .card-awaiting div {
-      color: #fff !important;
-      text-shadow:
-        -1px -1px 0 #000,
-         1px -1px 0 #000,
-        -1px  1px 0 #000,
-         1px  1px 0 #000;
-    }
+.card-awaiting,
+.card-awaiting .card-body,
+.card-awaiting strong,
+.card-awaiting .text-muted,
+.card-awaiting .text-info,
+.card-awaiting .text-warning,
+.card-awaiting small,
+.card-awaiting div {
+  color: #fff !important;
+  text-shadow:
+    -1px -1px 0 #000,
+     1px -1px 0 #000,
+    -1px  1px 0 #000,
+     1px  1px 0 #000;
+}
 
     .filter-row input {
       max-width: 200px;
