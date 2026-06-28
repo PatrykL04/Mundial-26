@@ -70,33 +70,31 @@
       color: #e0e0e0 !important;
     }
 
-    /* Animowane TŁO dla oczekujących meczów, czerwona ramka */
-@keyframes bgPulse {
-  0%   { background: linear-gradient(135deg, #f1c40f, #e67e22); }
-  50%  { background: linear-gradient(135deg, #e67e22, #f1c40f); }
-  100% { background: linear-gradient(135deg, #f1c40f, #e67e22); }
-}
-
-.card-awaiting {
-  border: 3px solid #e74c3c !important; /* czerwona ramka, stała */
-  animation: bgPulse 2s infinite;
-}
-
-.card-awaiting,
-.card-awaiting .card-body,
-.card-awaiting strong,
-.card-awaiting .text-muted,
-.card-awaiting .text-info,
-.card-awaiting .text-warning,
-.card-awaiting small,
-.card-awaiting div {
-  color: #fff !important;
-  text-shadow:
-    -1px -1px 0 #000,
-     1px -1px 0 #000,
-    -1px  1px 0 #000,
-     1px  1px 0 #000;
-}
+    /* Animowane TŁO dla oczekujących, czerwona ramka */
+    @keyframes bgPulse {
+      0%   { background: linear-gradient(135deg, #f1c40f, #e67e22); }
+      50%  { background: linear-gradient(135deg, #e67e22, #f1c40f); }
+      100% { background: linear-gradient(135deg, #f1c40f, #e67e22); }
+    }
+    .card-awaiting {
+      border: 3px solid #e74c3c !important; /* czerwona ramka stała */
+      animation: bgPulse 2s infinite;
+    }
+    .card-awaiting,
+    .card-awaiting .card-body,
+    .card-awaiting strong,
+    .card-awaiting .text-muted,
+    .card-awaiting .text-info,
+    .card-awaiting .text-warning,
+    .card-awaiting small,
+    .card-awaiting div {
+      color: #fff !important;
+      text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
+    }
 
     .filter-row input {
       max-width: 200px;
@@ -109,6 +107,12 @@
     }
     .player-name-link:hover {
       color: #0a58ca;
+    }
+    .knockout-badge {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      font-size: 1.2em;
     }
   </style>
 </head>
@@ -180,8 +184,9 @@
       <div id="rulesTab" class="tab-content hidden">
         <h4>Zasady gry</h4>
         <ul>
-          <li>Za <strong>dokładne trafienie wyniku</strong> (np. typ 2:1 i wynik 2:1) – <strong>5 punktów</strong>.</li>
-          <li>Za <strong>poprawnego zwycięzcę lub remis</strong> (nie dokładny wynik) – <strong>3 punkty</strong>.</li>
+          <li>Za <strong>dokładne trafienie wyniku</strong> (do 90 minut) – <strong>5 punktów</strong>.</li>
+          <li>Za <strong>poprawnego zwycięzcę lub remis</strong> (do 90 minut) – <strong>3 punkty</strong>.</li>
+          <li><strong>Faza pucharowa:</strong> dodatkowy <strong>1 punkt</strong> za trafienie zwycięzcy po dogrywce.</li>
           <li>Typy można zmieniać <strong>do 30 minut przed meczem</strong>.</li>
           <li>Po meczu administrator wpisuje wynik, a system przyznaje punkty automatycznie.</li>
           <li>Nowe konta wymagają akceptacji administratora.</li>
@@ -193,9 +198,15 @@
         <hr>
         <h4>Dodaj mecz</h4>
         <form id="addMatchForm" class="row g-2 mb-4">
-          <div class="col-md-4"><input id="homeTeam" class="form-control" placeholder="Gospodarz" required></div>
-          <div class="col-md-4"><input id="awayTeam" class="form-control" placeholder="Gość" required></div>
+          <div class="col-md-3"><input id="homeTeam" class="form-control" placeholder="Gospodarz" required></div>
+          <div class="col-md-3"><input id="awayTeam" class="form-control" placeholder="Gość" required></div>
           <div class="col-md-3"><input type="datetime-local" id="matchDate" class="form-control" required></div>
+          <div class="col-md-2 d-flex align-items-center">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="knockoutCheck">
+              <label class="form-check-label" for="knockoutCheck">Faza pucharowa</label>
+            </div>
+          </div>
           <div class="col-md-1"><button type="submit" class="btn btn-success">+</button></div>
         </form>
         <h4>Zarządzaj wynikami meczów</h4>
@@ -506,6 +517,7 @@
         const scoreSet = m.homeScore !== undefined && m.homeScore !== null;
         const scoreText = scoreSet ? `${m.homeScore} - ${m.awayScore}` : '? - ?';
         const canPredict = !deadlinePassed && !scoreSet;
+        const isKnockout = m.isKnockout === true;
 
         const st = allStatsData[m.id] || { home: 0, draw: 0, away: 0 };
         const total = st.home + st.draw + st.away;
@@ -526,13 +538,13 @@
           }
         }
 
-        // Animowana ramka dla oczekujących (po deadlinie, bez wyniku)
         if (deadlinePassed && !scoreSet) {
           cardExtraClass += ' card-awaiting';
         }
 
         const matchHtml = `
-          <div class="card mb-2 ${cardExtraClass}">
+          <div class="card mb-2 position-relative ${cardExtraClass}">
+            ${isKnockout ? '<span class="knockout-badge">🏆</span>' : ''}
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <div><strong>${m.homeTeam} vs ${m.awayTeam}</strong></div>
@@ -546,7 +558,22 @@
                   <input type="number" class="form-control form-control-sm" placeholder="${m.awayTeam}" min="0" value="${pred ? pred.awayScore : ''}" id="away-${m.id}">
                   <button class="btn btn-sm btn-primary" onclick="savePrediction('${m.id}')">Zapisz typ</button>
                 </div>
-              ` : (pred ? `<div class="mt-2 text-info">Twój typ: ${pred.homeScore} - ${pred.awayScore}</div>` : '')}
+                ${isKnockout ? `
+                  <div class="mt-2">
+                    <small class="fw-bold">Zwycięzca po dogrywce:</small><br>
+                    <div class="form-check form-check-inline">
+                      <input class="form-check-input" type="radio" name="ko-${m.id}" id="ko-${m.id}-home" value="${m.homeTeam}" ${pred && pred.knockoutWinner === m.homeTeam ? 'checked' : ''}>
+                      <label class="form-check-label" for="ko-${m.id}-home">${m.homeTeam}</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                      <input class="form-check-input" type="radio" name="ko-${m.id}" id="ko-${m.id}-away" value="${m.awayTeam}" ${pred && pred.knockoutWinner === m.awayTeam ? 'checked' : ''}>
+                      <label class="form-check-label" for="ko-${m.id}-away">${m.awayTeam}</label>
+                    </div>
+                  </div>
+                ` : ''}
+              ` : (pred ? `
+                <div class="mt-2 text-info">Twój typ: ${pred.homeScore} - ${pred.awayScore}${pred.knockoutWinner ? ', zwycięzca: ' + pred.knockoutWinner : ''}</div>
+              ` : '')}
               ${deadlinePassed && !scoreSet ? '<div class="text-warning small">Oczekiwanie na wynik</div>' : ''}
 
               <div class="mt-2">
@@ -587,6 +614,8 @@
       const home = document.getElementById(`home-${matchId}`).value;
       const away = document.getElementById(`away-${matchId}`).value;
       if (home === '' || away === '') return alert('Podaj obie liczby');
+      
+      const match = allMatchesData.find(m => m.id === matchId);
       const pred = {
         matchId,
         userId: currentUser.uid,
@@ -594,6 +623,17 @@
         awayScore: parseInt(away),
         timestamp: serverTimestamp()
       };
+
+      // Jeśli mecz pucharowy, dołącz typ zwycięzcy
+      if (match && match.isKnockout === true) {
+        const selectedRadio = document.querySelector(`input[name="ko-${matchId}"]:checked`);
+        if (selectedRadio) {
+          pred.knockoutWinner = selectedRadio.value;
+        } else {
+          pred.knockoutWinner = null; // jawnie brak
+        }
+      }
+
       const existingSnap = await getDocs(query(collection(db, 'predictions'), where('matchId', '==', matchId), where('userId', '==', currentUser.uid)));
       if (!existingSnap.empty) {
         await updateDoc(doc(db, 'predictions', existingSnap.docs[0].id), pred);
@@ -683,7 +723,7 @@
                   <div class="text-muted small">${new Date(m.matchDate.seconds*1000).toLocaleString()}</div>
                 </div>
                 <div class="mt-2">Wynik: ${m.homeScore} - ${m.awayScore}</div>
-                ${pred ? `<div class="mt-2 text-info">Typ: ${pred.homeScore} - ${pred.awayScore}</div>` : '<div class="mt-2 text-muted">Brak typu</div>'}
+                ${pred ? `<div class="mt-2 text-info">Typ: ${pred.homeScore} - ${pred.awayScore}${pred.knockoutWinner ? ', zwycięzca: ' + pred.knockoutWinner : ''}</div>` : '<div class="mt-2 text-muted">Brak typu</div>'}
               </div>
             </div>`;
         });
@@ -721,13 +761,14 @@
       matchesSnap.forEach(docSnap => {
         const m = { id: docSnap.id, ...docSnap.data() };
         const hasScore = m.homeScore !== undefined && m.homeScore !== null;
+        const isKnockout = m.isKnockout === true;
 
         if (hasScore && m.scored) {
           adminContainer.innerHTML += `
             <div class="card mb-2">
               <div class="card-body">
                 <strong>${m.homeTeam} vs ${m.awayTeam}</strong> (${new Date(m.matchDate.seconds*1000).toLocaleString()})
-                <div>Wynik: ${m.homeScore} - ${m.awayScore}</div>
+                <div>Wynik: ${m.homeScore} - ${m.awayScore}${isKnockout && m.winner ? ', zwycięzca: ' + m.winner : ''}</div>
                 <button class="btn btn-sm btn-danger mt-2" onclick="revertResult('${m.id}')">Cofnij wynik i punkty</button>
               </div>
             </div>`;
@@ -742,6 +783,16 @@
                   <input type="number" class="form-control form-control-sm" value="${m.awayScore}" id="res-away-${m.id}">
                   <button class="btn btn-sm btn-warning" onclick="setResult('${m.id}')">Przyznaj punkty</button>
                 </div>
+                ${isKnockout ? `
+                  <div class="mt-2">
+                    <small>Zwycięzca po dogrywce:</small>
+                    <select id="winner-${m.id}" class="form-select form-select-sm d-inline-block w-auto ms-2">
+                      <option value="">-- wybierz --</option>
+                      <option value="${m.homeTeam}">${m.homeTeam}</option>
+                      <option value="${m.awayTeam}">${m.awayTeam}</option>
+                    </select>
+                  </div>
+                ` : ''}
               </div>
             </div>`;
         } else if (now.seconds >= m.deadline.seconds) {
@@ -755,6 +806,16 @@
                   <input type="number" class="form-control form-control-sm" placeholder="${m.awayTeam}" min="0" id="res-away-${m.id}">
                   <button class="btn btn-sm btn-warning" onclick="setResult('${m.id}')">Zapisz wynik i licz punkty</button>
                 </div>
+                ${isKnockout ? `
+                  <div class="mt-2">
+                    <small>Zwycięzca po dogrywce:</small>
+                    <select id="winner-${m.id}" class="form-select form-select-sm d-inline-block w-auto ms-2">
+                      <option value="">-- wybierz --</option>
+                      <option value="${m.homeTeam}">${m.homeTeam}</option>
+                      <option value="${m.awayTeam}">${m.awayTeam}</option>
+                    </select>
+                  </div>
+                ` : ''}
               </div>
             </div>`;
         }
@@ -782,6 +843,7 @@
         else if ((p.homeScore > p.awayScore && match.homeScore > match.awayScore) ||
                  (p.homeScore < p.awayScore && match.homeScore < match.awayScore) ||
                  (p.homeScore === p.awayScore && match.homeScore === match.awayScore)) points = 3;
+        if (match.isKnockout && p.knockoutWinner && p.knockoutWinner === match.winner) points += 1;
         if (points > 0) {
           const userRef = doc(db, 'users', p.userId);
           const userSnap = await getDoc(userRef);
@@ -791,7 +853,7 @@
           }
         }
       }
-      batch.update(matchRef, { homeScore: null, awayScore: null, scored: false });
+      batch.update(matchRef, { homeScore: null, awayScore: null, scored: false, winner: null });
       await batch.commit();
       alert('Wynik cofnięty, punkty odjęte.');
       loadAdminPanel();
@@ -806,7 +868,20 @@
       const home = parseInt(document.getElementById(`res-home-${matchId}`).value);
       const away = parseInt(document.getElementById(`res-away-${matchId}`).value);
       if (isNaN(home) || isNaN(away)) return alert('Podaj poprawne liczby');
-      await updateDoc(doc(db, 'matches', matchId), { homeScore: home, awayScore: away, scored: false });
+
+      const matchRef = doc(db, 'matches', matchId);
+      const matchSnap = await getDoc(matchRef);
+      const match = matchSnap.data();
+      const updateData = { homeScore: home, awayScore: away, scored: false };
+
+      // Zwycięzca pucharowy (jeśli jest pole select)
+      const winnerSelect = document.getElementById(`winner-${matchId}`);
+      if (winnerSelect && winnerSelect.value) {
+        updateData.winner = winnerSelect.value;
+      }
+
+      await updateDoc(matchRef, updateData);
+
       const predsSnap = await getDocs(query(collection(db, 'predictions'), where('matchId', '==', matchId)));
       const batch = writeBatch(db);
       for (const predDoc of predsSnap.docs) {
@@ -814,6 +889,7 @@
         let points = 0;
         if (p.homeScore === home && p.awayScore === away) points = 5;
         else if ((p.homeScore > p.awayScore && home > away) || (p.homeScore < p.awayScore && home < away) || (p.homeScore === p.awayScore && home === away)) points = 3;
+        if (updateData.winner && p.knockoutWinner && p.knockoutWinner === updateData.winner) points += 1;
         if (points > 0) {
           const userRef = doc(db, 'users', p.userId);
           const userSnap = await getDoc(userRef);
@@ -823,7 +899,7 @@
           }
         }
       }
-      batch.update(doc(db, 'matches', matchId), { scored: true });
+      batch.update(matchRef, { scored: true });
       await batch.commit();
       alert('Punkty przyznane!');
       loadAdminPanel();
@@ -839,10 +915,11 @@
       const home = document.getElementById('homeTeam').value.trim();
       const away = document.getElementById('awayTeam').value.trim();
       const dateStr = document.getElementById('matchDate').value;
+      const isKnockout = document.getElementById('knockoutCheck').checked;
       if (!home || !away || !dateStr) return;
       const matchDate = Timestamp.fromDate(new Date(dateStr));
       const deadline = new Timestamp(matchDate.seconds - 1800, 0);
-      await setDoc(doc(collection(db, 'matches')), {
+      const matchData = {
         homeTeam: home,
         awayTeam: away,
         matchDate,
@@ -850,7 +927,11 @@
         homeScore: null,
         awayScore: null,
         scored: false
-      });
+      };
+      if (isKnockout) {
+        matchData.isKnockout = true;
+      }
+      await setDoc(doc(collection(db, 'matches')), matchData);
       document.getElementById('addMatchForm').reset();
       loadAdminPanel();
     });
