@@ -70,14 +70,13 @@
       color: #e0e0e0 !important;
     }
 
-    /* Animowane TŁO dla oczekujących, czerwona ramka */
     @keyframes bgPulse {
       0%   { background: linear-gradient(135deg, #f1c40f, #e67e22); }
       50%  { background: linear-gradient(135deg, #e67e22, #f1c40f); }
       100% { background: linear-gradient(135deg, #f1c40f, #e67e22); }
     }
     .card-awaiting {
-      border: 3px solid #e74c3c !important; /* czerwona ramka stała */
+      border: 3px solid #e74c3c !important;
       animation: bgPulse 2s infinite;
     }
     .card-awaiting,
@@ -186,7 +185,7 @@
         <ul>
           <li>Za <strong>dokładne trafienie wyniku</strong> (do 90 minut) – <strong>5 punktów</strong>.</li>
           <li>Za <strong>poprawnego zwycięzcę lub remis</strong> (do 90 minut) – <strong>3 punkty</strong>.</li>
-          <li><strong>Faza pucharowa:</strong> dodatkowy <strong>1 punkt</strong> za trafienie zwycięzcy po dogrywce.</li>
+          <li><strong>Faza pucharowa:</strong> dodatkowy <strong>1 punkt</strong> za trafienie ostatecznego zwycięzcy (po dogrywce/rzutach karnych).</li>
           <li>Typy można zmieniać <strong>do 30 minut przed meczem</strong>.</li>
           <li>Po meczu administrator wpisuje wynik, a system przyznaje punkty automatycznie.</li>
           <li>Nowe konta wymagają akceptacji administratora.</li>
@@ -560,7 +559,7 @@
                 </div>
                 ${isKnockout ? `
                   <div class="mt-2">
-                    <small class="fw-bold">Zwycięzca po dogrywce:</small><br>
+                    <small class="fw-bold">Końcowy rezultat (kto wygra):</small><br>
                     <div class="form-check form-check-inline">
                       <input class="form-check-input" type="radio" name="ko-${m.id}" id="ko-${m.id}-home" value="${m.homeTeam}" ${pred && pred.knockoutWinner === m.homeTeam ? 'checked' : ''}>
                       <label class="form-check-label" for="ko-${m.id}-home">${m.homeTeam}</label>
@@ -572,7 +571,7 @@
                   </div>
                 ` : ''}
               ` : (pred ? `
-                <div class="mt-2 text-info">Twój typ: ${pred.homeScore} - ${pred.awayScore}${pred.knockoutWinner ? ', zwycięzca: ' + pred.knockoutWinner : ''}</div>
+                <div class="mt-2 text-info">Twój typ: ${pred.homeScore} - ${pred.awayScore}${pred.knockoutWinner ? ', końcowy rezultat: ' + pred.knockoutWinner : ''}</div>
               ` : '')}
               ${deadlinePassed && !scoreSet ? '<div class="text-warning small">Oczekiwanie na wynik</div>' : ''}
 
@@ -624,13 +623,12 @@
         timestamp: serverTimestamp()
       };
 
-      // Jeśli mecz pucharowy, dołącz typ zwycięzcy
       if (match && match.isKnockout === true) {
         const selectedRadio = document.querySelector(`input[name="ko-${matchId}"]:checked`);
         if (selectedRadio) {
           pred.knockoutWinner = selectedRadio.value;
         } else {
-          pred.knockoutWinner = null; // jawnie brak
+          pred.knockoutWinner = null;
         }
       }
 
@@ -723,7 +721,7 @@
                   <div class="text-muted small">${new Date(m.matchDate.seconds*1000).toLocaleString()}</div>
                 </div>
                 <div class="mt-2">Wynik: ${m.homeScore} - ${m.awayScore}</div>
-                ${pred ? `<div class="mt-2 text-info">Typ: ${pred.homeScore} - ${pred.awayScore}${pred.knockoutWinner ? ', zwycięzca: ' + pred.knockoutWinner : ''}</div>` : '<div class="mt-2 text-muted">Brak typu</div>'}
+                ${pred ? `<div class="mt-2 text-info">Typ: ${pred.homeScore} - ${pred.awayScore}${pred.knockoutWinner ? ', końcowy rezultat: ' + pred.knockoutWinner : ''}</div>` : '<div class="mt-2 text-muted">Brak typu</div>'}
               </div>
             </div>`;
         });
@@ -768,7 +766,7 @@
             <div class="card mb-2">
               <div class="card-body">
                 <strong>${m.homeTeam} vs ${m.awayTeam}</strong> (${new Date(m.matchDate.seconds*1000).toLocaleString()})
-                <div>Wynik: ${m.homeScore} - ${m.awayScore}${isKnockout && m.winner ? ', zwycięzca: ' + m.winner : ''}</div>
+                <div>Wynik: ${m.homeScore} - ${m.awayScore}${isKnockout && m.winner ? ', końcowy rezultat: ' + m.winner : ''}</div>
                 <button class="btn btn-sm btn-danger mt-2" onclick="revertResult('${m.id}')">Cofnij wynik i punkty</button>
               </div>
             </div>`;
@@ -785,7 +783,7 @@
                 </div>
                 ${isKnockout ? `
                   <div class="mt-2">
-                    <small>Zwycięzca po dogrywce:</small>
+                    <small>Końcowy rezultat (kto wygra):</small>
                     <select id="winner-${m.id}" class="form-select form-select-sm d-inline-block w-auto ms-2">
                       <option value="">-- wybierz --</option>
                       <option value="${m.homeTeam}">${m.homeTeam}</option>
@@ -808,7 +806,7 @@
                 </div>
                 ${isKnockout ? `
                   <div class="mt-2">
-                    <small>Zwycięzca po dogrywce:</small>
+                    <small>Końcowy rezultat (kto wygra):</small>
                     <select id="winner-${m.id}" class="form-select form-select-sm d-inline-block w-auto ms-2">
                       <option value="">-- wybierz --</option>
                       <option value="${m.homeTeam}">${m.homeTeam}</option>
@@ -874,7 +872,6 @@
       const match = matchSnap.data();
       const updateData = { homeScore: home, awayScore: away, scored: false };
 
-      // Zwycięzca pucharowy (jeśli jest pole select)
       const winnerSelect = document.getElementById(`winner-${matchId}`);
       if (winnerSelect && winnerSelect.value) {
         updateData.winner = winnerSelect.value;
